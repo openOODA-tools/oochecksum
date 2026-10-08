@@ -1,0 +1,42 @@
+// # Checksum Render Verification Anchor
+//
+// Logline: Invariant verification suite confirming output formatting and manifest generation.
+//
+// Setup: Exports render subroutines and executes render integrity predicates.
+//
+// Beats:
+//   1. Verify OK and FAILED entry line rendering.
+//   2. Verify BSD-style and GNU-style manifest formatting.
+//   3. Verify JSON output serialization.
+//   4. Deliver unified render verification status.
+
+import "render/checksum_theme.oo";
+import "core/checksum_types.oo";
+
+pub fn verify_render_subsystem() -> Bool {
+    let ok_entry: ChecksumEntry = make_checksum_entry("file.txt", "abc", "abc", "SHA256", "gnu", false, "OK");
+    let line: String = render_entry_status(ok_entry, false);
+    if line != "file.txt: OK\n" {
+        return false;
+    }
+
+    let gnu_line: String = render_manifest_line(ok_entry, false);
+    if gnu_line != "abc  file.txt\n" {
+        return false;
+    }
+
+    let bsd_line: String = render_manifest_line(ok_entry, true);
+    if bsd_line != "SHA256 (file.txt) = abc\n" {
+        return false;
+    }
+
+    let sum: ChecksumSummary = make_checksum_summary(1, 1, 0, 0, 0);
+    let mut list_entry: List[ChecksumEntry] = list_new();
+    let list_entry: List[ChecksumEntry] = list_push(list_entry, ok_entry);
+    let json_str: String = render_json_results(list_entry, sum);
+    if !str_contains(json_str, "\"tool\":\"oochecksum\"") {
+        return false;
+    }
+
+    return true;
+}

@@ -1,0 +1,43 @@
+// # Checksum IPC Verification Anchor
+//
+// Logline: Invariant verification suite confirming options parsing, JSON codecs, and MCP server.
+//
+// Setup: Exports IPC subroutines and executes IPC integrity predicates.
+//
+// Beats:
+//   1. Verify JSON escaping and parameter extraction.
+//   2. Verify command-line option parser flag recognition.
+//   3. Verify MCP JSON-RPC 2.0 handshake initialization frames.
+//   4. Deliver unified IPC verification status.
+
+import "ipc/json_field.oo";
+import "ipc/checksum_opts.oo";
+import "ipc/mcp_serve.oo";
+
+pub fn verify_ipc_subsystem() -> Bool {
+    let raw: String = "{\"id\":\"10\",\"method\":\"initialize\"}";
+    let method: String = extract_json_str(raw, "method");
+    if method != "initialize" {
+        return false;
+    }
+
+    let escaped: String = json_escape("test \"quote\"\n");
+    if !str_contains(escaped, "\\\"") {
+        return false;
+    }
+
+    let args: List[String] = list_new();
+    let args: List[String] = list_push(args, "-c");
+    let args: List[String] = list_push(args, "checksums.txt");
+    let opts: ChecksumOptions = parse_checksum_opts(args);
+    if opts.check_path != "checksums.txt" {
+        return false;
+    }
+
+    let init_frame: String = render_mcp_init("\"1\"");
+    if !str_contains(init_frame, "oochecksum") {
+        return false;
+    }
+
+    return true;
+}

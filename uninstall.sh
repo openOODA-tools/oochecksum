@@ -4,7 +4,7 @@
 # "Removes oochecksum binary, package installations, and cache."
 #
 # Usage:
-#   curl -fsSL https://openooda-toochecksum.github.io/oochecksum/uninstall.sh | bash
+#   curl -fsSL https://openooda-tools.github.io/oochecksum/uninstall.sh | bash
 #   or: ./uninstall.sh [options]
 #
 # Options:

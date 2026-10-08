@@ -1,0 +1,138 @@
+// # Model Context Protocol (MCP) Server for oochecksum
+//
+// Logline: JSON-RPC 2.0 stdio server providing checksum verification, generation, and format audit.
+//
+// Setup: Demands FsReadCap to service streaming agent tool invocations over standard input.
+//
+// Beats:
+//   1. Handle MCP initialize handshake with server metadata.
+//   2. Expose tools/list catalogue with five integrity checking tools.
+//   3. Dispatch tools/call for checksum_verify, generate, detect, audit, and hash.
+//   4. Deliver streaming JSON-RPC responses over standard output.
+
+import "core/checksum_types.oo";
+import "core/checksum_parser.oo";
+import "core/checksum_calc.oo";
+import "core/checksum_verify.oo";
+import "render/checksum_theme.oo";
+import "ipc/json_field.oo";
+
+pub fn render_mcp_init(id: String) -> String {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"protocolVersion\":\"2024-11-05\",\"capabilities\":{\"tools\":{}},\"serverInfo\":{\"name\":\"oochecksum\",\"version\":\"0.2.0\"}}}\n";
+}
+
+pub fn render_mcp_tools_list(id: String) -> String {
+    let mut out: String = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"tools\":[";
+    out = out + "{\"name\":\"checksum_verify\",\"description\":\"Verify a BSD or GNU checksum manifest string against files.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"manifest\":{\"type\":\"string\"}},\"required\":[\"manifest\"]}},";
+    out = out + "{\"name\":\"checksum_generate\",\"description\":\"Generate BSD or GNU style manifest lines for file paths.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"},\"algorithm\":{\"type\":\"string\"},\"format\":{\"type\":\"string\"}},\"required\":[\"path\"]}},";
+    out = out + "{\"name\":\"checksum_detect_format\",\"description\":\"Detect checksum format (BSD vs GNU) and algorithm from a line.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"line\":{\"type\":\"string\"}},\"required\":[\"line\"]}},";
+    out = out + "{\"name\":\"checksum_audit_tree\",\"description\":\"Audit manifest file or directory for missing or failed checksums.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\"}}}},";
+    out = out + "{\"name\":\"checksum_hash\",\"description\":\"Compute SHA256 or CRC32 digest for string content.\",\"inputSchema\":{\"type\":\"object\",\"properties\":{\"content\":{\"type\":\"string\"},\"algorithm\":{\"type\":\"string\"}},\"required\":[\"content\"]}}";
+    out = out + "]}}\n";
+    return out;
+}
+
+pub fn handle_mcp_call(fs: &FsReadCap, id: String, tool_name: String, req: String) -> String {
+    if tool_name == "checksum_verify" {
+        let manifest_content: String = extract_json_str(req, "manifest");
+        let entries: List[ChecksumEntry] = parse_manifest_text(manifest_content);
+        let verified: List[ChecksumEntry] = verify_manifest_entries(fs, entries);
+        let sum: ChecksumSummary = summarize_verification(verified);
+        let mut report: String = "";
+        let n: Int = list_len(verified);
+        let mut i: Int = 0;
+        while i < n {
+            let e: ChecksumEntry = list_get(verified, i);
+            report = report + render_entry_status(e, false);
+            i = i + 1;
+        }
+        report = report + render_summary_warnings(sum);
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(report) + "\"}]}}\n";
+    }
+
+    if tool_name == "checksum_detect_format" {
+        let line: String = extract_json_str(req, "line");
+        let entry: ChecksumEntry = parse_manifest_line(line);
+        let text: String = "Format: " + entry.format_style + "\nAlgorithm: " + entry.algorithm + "\nPath: " + entry.path + "\nHash: " + entry.expected_hash + "\nBinary: " + if entry.is_binary { "true" } else { "false" } + "\n";
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(text) + "\"}]}}\n";
+    }
+
+    if tool_name == "checksum_generate" {
+        let p: String = extract_json_str(req, "path");
+        let algo: String = extract_json_str(req, "algorithm");
+        let style: String = extract_json_str(req, "format");
+        let eff_algo: String = if chars_len(algo) > 0 { algo } else { "SHA256" };
+        let is_bsd: Bool = (style == "bsd");
+        let file_res: Result[String, String] = read_file(fs, p);
+        let content: String = match file_res { Ok(s) => s, Err(_) => "" };
+        let digest: String = compute_checksum(eff_algo, content);
+        let entry: ChecksumEntry = make_checksum_entry(p, digest, digest, eff_algo, if is_bsd { "bsd" } else { "gnu" }, false, "OK");
+        let line_out: String = render_manifest_line(entry, is_bsd);
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(line_out) + "\"}]}}\n";
+    }
+
+    if tool_name == "checksum_hash" {
+        let content: String = extract_json_str(req, "content");
+        let algo: String = extract_json_str(req, "algorithm");
+        let eff_algo: String = if chars_len(algo) > 0 { algo } else { "SHA256" };
+        let digest: String = compute_checksum(eff_algo, content);
+        let text: String = eff_algo + " digest: " + digest + "\n";
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(text) + "\"}]}}\n";
+    }
+
+    if tool_name == "checksum_audit_tree" {
+        let manifest_path: String = extract_json_str(req, "path");
+        let target: String = if chars_len(manifest_path) > 0 { manifest_path } else { "dist/checksums.txt" };
+        let file_res: Result[String, String] = read_file(fs, target);
+        if !file_res.is_ok() {
+            return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"Manifest not found: " + target + "\"}]}}\n";
+        }
+        let content: String = match file_res { Ok(s) => s, Err(_) => "" };
+        let entries: List[ChecksumEntry] = parse_manifest_text(content);
+        let verified: List[ChecksumEntry] = verify_manifest_entries(fs, entries);
+        let sum: ChecksumSummary = summarize_verification(verified);
+        let text: String = "Audit of " + target + ":\n  Total: " + to_string(sum.total_lines) + "\n  Passed: " + to_string(sum.verified_ok) + "\n  Failed: " + to_string(sum.failed_mismatch) + "\n  Missing: " + to_string(sum.missing_files) + "\n";
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"" + json_escape(text) + "\"}]}}\n";
+    }
+
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}\n";
+}
+
+pub fn handle_mcp_message(fs: &FsReadCap, req: String) -> String {
+    let id_str: String = extract_json_str(req, "id");
+    let id: String = if chars_len(id_str) > 0 { "\"" + id_str + "\"" } else { "1" };
+    let method: String = extract_json_str(req, "method");
+
+    if method == "initialize" {
+        return render_mcp_init(id);
+    }
+    if method == "tools/list" {
+        return render_mcp_tools_list(id);
+    }
+    if method == "tools/call" {
+        let tool_name: String = extract_json_str(req, "name");
+        return handle_mcp_call(fs, id, tool_name, req);
+    }
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}\n";
+}
+
+pub fn run_mcp_server(fs: &FsReadCap) {
+    let mut running: Bool = true;
+    while running {
+        let line_res: Result[String, String] = oo_read_stdin_chunk(fs, 8192);
+        if !line_res.is_ok() {
+            running = false;
+        } else {
+            let line: String = match line_res { Ok(s) => s, Err(_) => "" };
+            let trimmed: String = str_trim(line);
+            if chars_len(trimmed) == 0 {
+                running = false;
+            } else {
+                let resp: String = handle_mcp_message(fs, trimmed);
+                if chars_len(resp) > 0 {
+                    print(resp);
+                }
+            }
+        }
+    }
+}

@@ -1,13 +1,28 @@
-// # oochecksum Root Anchor
+// # oochecksum Root System Anchor
 //
-// Logline: Top-level anchor re-exporting options, core logic, render, and ipc subsystems.
+// Logline: Unified system verification anchor connecting core, render, and IPC subsystems.
 //
-// Setup: Pure shim re-exporting all oochecksum subsystem anchors.
+// Setup: Exports top-level invariant predicates and executes holistic sanity checks.
 //
 // Beats:
-//   1. Re-export options parsing subsystem.
-//   2. Re-export core oochecksum execution engine.
-//   3. Re-export render formatting subsystem.
-//   4. Re-export Model Context Protocol (MCP) IPC subsystem.
+//   1. Verify core types, manifest parser, and digest calculator.
+//   2. Verify render status formatters and warning summaries.
+//   3. Verify IPC options and MCP protocol handlers.
+//   4. Deliver overall system readiness verification.
 
-import "main.oo";
+import "core/anchor.oo";
+import "render/anchor.oo";
+import "ipc/anchor.oo";
+
+pub fn verify_entire_system() -> Bool {
+    if !verify_core_subsystem() {
+        return false;
+    }
+    if !verify_render_subsystem() {
+        return false;
+    }
+    if !verify_ipc_subsystem() {
+        return false;
+    }
+    return true;
+}

@@ -1,0 +1,86 @@
+// # Checksum Command-Line Options Parser
+//
+// Logline: Parses command-line flags and arguments for checksum verification and hashing.
+//
+// Setup: Inspects POSIX argument lists and populates ChecksumOptions record.
+//
+// Beats:
+//   1. Parse manifest check path (-c, --check).
+//   2. Parse output format modes: BSD tag, quiet, status-only, and JSON.
+//   3. Parse error policies: ignore-missing and strict syntax validation.
+//   4. Deliver structured execution options to dispatcher.
+
+pub type ChecksumOptions = struct {
+    check_path: String,
+    algorithm: String,
+    tag_bsd: Bool,
+    status_only: Bool,
+    quiet: Bool,
+    ignore_missing: Bool,
+    strict: Bool,
+    demo: Bool,
+    json_output: Bool,
+    help: Bool,
+    version: Bool,
+    mcp: Bool,
+    files: List[String]
+};
+
+pub fn default_checksum_options() -> ChecksumOptions {
+    return ChecksumOptions {
+        check_path: "",
+        algorithm: "auto",
+        tag_bsd: false,
+        status_only: false,
+        quiet: false,
+        ignore_missing: false,
+        strict: false,
+        demo: false,
+        json_output: false,
+        help: false,
+        version: false,
+        mcp: false,
+        files: list_new()
+    };
+}
+
+pub fn parse_checksum_opts(args: List[String]) -> ChecksumOptions {
+    let mut opts: ChecksumOptions = default_checksum_options();
+    let n: Int = list_len(args);
+    let mut i: Int = 0;
+
+    while i < n {
+        let arg: String = list_get(args, i);
+        if arg == "-h" || arg == "--help" {
+            opts.help = true;
+        } else if arg == "-v" || arg == "--version" {
+            opts.version = true;
+        } else if arg == "--mcp" {
+            opts.mcp = true;
+        } else if arg == "--demo" {
+            opts.demo = true;
+        } else if arg == "--json" {
+            opts.json_output = true;
+        } else if arg == "--tag" {
+            opts.tag_bsd = true;
+        } else if arg == "--status" {
+            opts.status_only = true;
+        } else if arg == "-q" || arg == "--quiet" {
+            opts.quiet = true;
+        } else if arg == "--ignore-missing" {
+            opts.ignore_missing = true;
+        } else if arg == "--strict" {
+            opts.strict = true;
+        } else if (arg == "-c" || arg == "--check") && i + 1 < n {
+            i = i + 1;
+            opts.check_path = list_get(args, i);
+        } else if (arg == "-a" || arg == "--algorithm") && i + 1 < n {
+            i = i + 1;
+            opts.algorithm = list_get(args, i);
+        } else if !str_starts_with(arg, "-") && chars_len(arg) > 0 {
+            opts.files = list_push(opts.files, arg);
+        }
+        i = i + 1;
+    }
+    return opts;
+}

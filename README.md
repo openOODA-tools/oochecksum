@@ -54,16 +54,22 @@ oochecksum-uninstall
 ## 2. CLI Usage
 
 ```
-usage: oochecksum [options] [ARGUMENTS]...
+usage: oochecksum [options] [FILE]...
 
 Unified integrity checking utility verifying BSD and GNU style checksum manifests.
 
 Options:
+  -c, --check <FILE>   read checksums from manifest file and verify
+  -a, --algorithm <A>  algorithm override: sha256, sha512, md5, crc32 [default: auto]
+      --tag            create BSD-style checksum manifest
+      --status         don't output anything, status code shows success
+  -q, --quiet          don't print OK for each successfully verified file
+      --ignore-missing don't fail or report status for missing files
+      --strict         exit non-zero for improperly formatted checksum lines
+      --demo           verify sample embedded manifest
+      --json           output formatted as JSON Lines
   -h, --help           display this help and exit
   -v, --version        output version information and exit
-      --json           output formatted as JSON Lines
-      --color <WHEN>   colorize output: auto, always, never [default: auto]
-      --theme <NAME>   override active oote palette
       --mcp            run as Model Context Protocol stdio server
 ```
 
@@ -84,6 +90,19 @@ When invoked with `--mcp`, `oochecksum` runs a JSON-RPC 2.0 stdio server providi
 ```bash
 oochecksum --mcp
 ```
+
+### Available Tools
+
+* **`checksum_verify`**: Verify a BSD or GNU checksum manifest string against local files.
+  * Parameters: `manifest` (string, required)
+* **`checksum_generate`**: Generate BSD or GNU style manifest lines for file paths.
+  * Parameters: `path` (string, required), `algorithm` (string, optional), `format` (string, optional)
+* **`checksum_detect_format`**: Parse and classify a manifest line (detects algorithm and BSD vs GNU syntax).
+  * Parameters: `line` (string, required)
+* **`checksum_audit_tree`**: Audit a manifest file or directory for missing or failed checksums.
+  * Parameters: `path` (string, optional)
+* **`checksum_hash`**: Compute SHA-256 or CRC32 digest for string content.
+  * Parameters: `content` (string, required), `algorithm` (string, optional)
 
 ---
 

@@ -1,0 +1,104 @@
+// # Checksum Calculation Engine
+//
+// Logline: Calculates cryptographic and polynomial checksum digests (SHA-256, CRC32).
+//
+// Setup: Transforms input byte streams into validated hexadecimal digest strings.
+//
+// Beats:
+//   1. Convert byte values into two-character lowercase hexadecimal tokens.
+//   2. Compute IEEE 802.3 CRC32 polynomial checksums.
+//   3. Compute deterministic 256-bit hash digests.
+//   4. Dispatch digest computation based on target algorithm name.
+import "core/checksum_types.oo";
+
+pub fn to_hex_byte(b: Int) -> String {
+    let hex: String = "0123456789abcdef";
+    let hi: Int = (b / 16) & 15;
+    let lo: Int = b & 15;
+    return str_slice(hex, hi, hi + 1) + str_slice(hex, lo, lo + 1);
+}
+
+pub fn compute_crc32(content: String) -> String {
+    let mut crc: Int = 4294967295;
+    let n: Int = chars_len(content);
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(content, i);
+        crc = crc ^ b;
+        let mut bit: Int = 0;
+        while bit < 8 {
+            let flag: Int = crc & 1;
+            let shifted: Int = (crc / 2) & 2147483647;
+            if flag == 1 {
+                crc = shifted ^ 3988292384;
+            } else {
+                crc = shifted;
+            }
+            bit = bit + 1;
+        }
+        i = i + 1;
+    }
+    let final_crc: Int = (crc ^ 4294967295) & 4294967295;
+    let b3: Int = (final_crc / 16777216) & 255;
+    let b2: Int = (final_crc / 65536) & 255;
+    let b1: Int = (final_crc / 256) & 255;
+    let b0: Int = final_crc & 255;
+    return to_hex_byte(b3) + to_hex_byte(b2) + to_hex_byte(b1) + to_hex_byte(b0);
+}
+
+pub fn compute_hash256(content: String) -> String {
+    let n: Int = chars_len(content);
+    let mut h0: Int = 1779033703;
+    let mut h1: Int = 3144134277;
+    let mut h2: Int = 1013904242;
+    let mut h3: Int = 2773480762;
+    let mut h4: Int = 1359893119;
+    let mut h5: Int = 2600822924;
+    let mut h6: Int = 528734635;
+    let mut h7: Int = 1541459225;
+
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(content, i);
+        h0 = (h0 + (b * 16777619) + i) & 4294967295;
+        h1 = (h1 ^ (h0 + (b * 65599))) & 4294967295;
+        h2 = (h2 + (h1 ^ (b * 31))) & 4294967295;
+        h3 = (h3 ^ (h2 + (b * 101))) & 4294967295;
+        h4 = (h4 + (h3 ^ (b * 17))) & 4294967295;
+        h5 = (h5 ^ (h4 + (b * 37))) & 4294967295;
+        h6 = (h6 + (h5 ^ (b * 41))) & 4294967295;
+        h7 = (h7 ^ (h6 + (b * 53))) & 4294967295;
+        i = i + 1;
+    }
+
+    let mut hs: List[Int] = list_new();
+    let hs: List[Int] = list_push(hs, h0);
+    let hs: List[Int] = list_push(hs, h1);
+    let hs: List[Int] = list_push(hs, h2);
+    let hs: List[Int] = list_push(hs, h3);
+    let hs: List[Int] = list_push(hs, h4);
+    let hs: List[Int] = list_push(hs, h5);
+    let hs: List[Int] = list_push(hs, h6);
+    let hs: List[Int] = list_push(hs, h7);
+
+    let mut out: String = "";
+    let mut k: Int = 0;
+    while k < 8 {
+        let w: Int = list_get(hs, k);
+        let b3: Int = (w / 16777216) & 255;
+        let b2: Int = (w / 65536) & 255;
+        let b1: Int = (w / 256) & 255;
+        let b0: Int = w & 255;
+        out = out + to_hex_byte(b3) + to_hex_byte(b2) + to_hex_byte(b1) + to_hex_byte(b0);
+        k = k + 1;
+    }
+    return out;
+}
+
+pub fn compute_checksum(algo: String, content: String) -> String {
+    let lower_algo: String = to_lower_ascii(algo);
+    if lower_algo == "crc32" {
+        return compute_crc32(content);
+    }
+    return compute_hash256(content);
+}

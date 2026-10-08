@@ -1,0 +1,11 @@
+Package: oochecksum
+Version: 0.2.0-1
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: openOODA-tools <ops@openooda.org>
+Depends: libc6
+Description: Sovereign HASH VERIFIER
+ Unified integrity checking utility verifying BSD and GNU style checksum manifests.
+ Pure openOODA utility with zero ambient authority, terminal ergonomics,
+ and native Model Context Protocol (MCP) server.

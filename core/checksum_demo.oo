@@ -1,0 +1,63 @@
+// # Checksum Demonstration Fixtures
+//
+// Logline: Generates sample BSD and GNU manifests and simulated verification entries.
+//
+// Setup: Delivers deterministic manifests for test suites and offline agent verification.
+//
+// Beats:
+//   1. Construct sample GNU-style manifest string.
+//   2. Construct sample BSD-style manifest string.
+//   3. Generate pre-evaluated demo entries for offline CLI verification.
+//   4. Deliver structured demo data to verification dispatcher.
+
+import "core/checksum_types.oo";
+
+pub fn sample_gnu_manifest() -> String {
+    return "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  empty.txt\n"
+        + "1ae1f27ed3b8103ce3749fbef68b55f99ebe957523c00e4e790f81cefbf561d5 *binary.bin\n"
+        + "d41d8cd98f00b204e9800998ecf8427e  legacy.md5\n";
+}
+
+pub fn sample_bsd_manifest() -> String {
+    return "SHA256 (archive.tar.zst) = f159cea59a84c7686816b0b2dd6a772d5b4a5521a895ee885756299f99f301d6\n"
+        + "CRC32 (checksums.txt) = 4a4e7ff9\n";
+}
+
+pub fn build_demo_entries() -> List[ChecksumEntry] {
+    let mut entries: List[ChecksumEntry] = list_new();
+
+    let e1: ChecksumEntry = make_checksum_entry(
+        "libkernel.so",
+        "1ae1f27ed3b8103ce3749fbef68b55f99ebe957523c00e4e790f81cefbf561d5",
+        "1ae1f27ed3b8103ce3749fbef68b55f99ebe957523c00e4e790f81cefbf561d5",
+        "SHA256",
+        "gnu",
+        true,
+        "OK"
+    );
+    entries = list_push(entries, e1);
+
+    let e2: ChecksumEntry = make_checksum_entry(
+        "manifest.json",
+        "658c6a1bc474edc52aa5a4c5a7c208d11af70fc7a791485a8eaa9127129afcc7",
+        "658c6a1bc474edc52aa5a4c5a7c208d11af70fc7a791485a8eaa9127129afcc7",
+        "SHA256",
+        "gnu",
+        false,
+        "OK"
+    );
+    entries = list_push(entries, e2);
+
+    let e3: ChecksumEntry = make_checksum_entry(
+        "config.yaml",
+        "0452e0d7c0e484b010979d9b18621e0b2e1785c21be6890c5dd5c880d9da4665",
+        "0452e0d7c0e484b010979d9b18621e0b2e1785c21be6890c5dd5c880d9da4665",
+        "SHA256",
+        "bsd",
+        false,
+        "OK"
+    );
+    entries = list_push(entries, e3);
+
+    return entries;
+}

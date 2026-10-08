@@ -1,7 +1,7 @@
 # Maintainer: openOODA-tools <ops@openooda.org>
 pkgname=oochecksum-bin
 _pkgname=oochecksum
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Unified integrity checking utility verifying BSD and GNU style checksum manifests."
 arch=('x86_64')

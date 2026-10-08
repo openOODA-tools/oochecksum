@@ -1,0 +1,82 @@
+// # Checksum Manifest Data Types
+//
+// Logline: Data structures representing checksum entries, manifest lines, and audit summaries.
+//
+// Setup: Encapsulates parsed BSD and GNU checksum fields and verification statuses.
+//
+// Beats:
+//   1. Declare ChecksumEntry record for individual manifest lines and files.
+//   2. Declare ChecksumSummary record aggregating verification counts.
+//   3. Provide constructor helper for typed checksum entries.
+//   4. Provide constructor helper for verification summaries.
+
+pub type ChecksumEntry = struct {
+    path: String,
+    expected_hash: String,
+    actual_hash: String,
+    algorithm: String,
+    format_style: String,
+    is_binary: Bool,
+    status: String
+};
+
+pub type ChecksumSummary = struct {
+    total_lines: Int,
+    verified_ok: Int,
+    failed_mismatch: Int,
+    missing_files: Int,
+    format_errors: Int
+};
+
+pub fn make_checksum_entry(
+    path: String,
+    expected: String,
+    actual: String,
+    algo: String,
+    style: String,
+    is_bin: Bool,
+    stat: String
+) -> ChecksumEntry {
+    return ChecksumEntry {
+        path: path,
+        expected_hash: expected,
+        actual_hash: actual,
+        algorithm: algo,
+        format_style: style,
+        is_binary: is_bin,
+        status: stat
+    };
+}
+
+pub fn make_checksum_summary(
+    tot: Int,
+    ok_count: Int,
+    mismatch: Int,
+    missing: Int,
+    err_count: Int
+) -> ChecksumSummary {
+    return ChecksumSummary {
+        total_lines: tot,
+        verified_ok: ok_count,
+        failed_mismatch: mismatch,
+        missing_files: missing,
+        format_errors: err_count
+    };
+}
+
+pub fn to_lower_ascii(s: String) -> String {
+    let n: Int = chars_len(s);
+    let mut out: String = "";
+    let mut i: Int = 0;
+    while i < n {
+        let b: Int = byte_at(s, i);
+        if b >= 65 && b <= 90 {
+            out = out + bytes_to_str(bytes_push(bytes_new(), b + 32));
+        } else {
+            out = out + char_at(s, i);
+        }
+        i = i + 1;
+    }
+    return out;
+}
+

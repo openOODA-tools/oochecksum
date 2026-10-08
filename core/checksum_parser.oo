@@ -1,0 +1,116 @@
+// # Checksum Manifest Parser
+//
+// Logline: Ingests and parses GNU-style and BSD-style checksum manifest lines.
+//
+// Setup: Decodes raw manifest lines into structured ChecksumEntry records.
+//
+// Beats:
+//   1. Detect BSD-style <ALGO> (<path>) = <hash> records.
+//   2. Detect GNU-style <hash> [* ]<path> records.
+//   3. Infer cryptographic hash algorithm from digest length or tag.
+//   4. Parse multi-line manifest strings into entry lists.
+
+import "core/checksum_types.oo";
+
+pub fn detect_algo_by_len(hash_len: Int) -> String {
+    if hash_len == 64 { return "SHA256"; }
+    if hash_len == 128 { return "SHA512"; }
+    if hash_len == 40 { return "SHA1"; }
+    if hash_len == 32 { return "MD5"; }
+    if hash_len == 8 { return "CRC32"; }
+    return "UNKNOWN";
+}
+
+pub fn strip_escaped_newlines(s: String) -> String {
+    let mut out: String = str_trim(s);
+    if str_ends_with(out, "\\n") {
+        out = str_slice(out, 0, chars_len(out) - 2);
+    }
+    if str_ends_with(out, "\\r") {
+        out = str_slice(out, 0, chars_len(out) - 2);
+    }
+    return str_trim(out);
+}
+
+pub fn parse_bsd_line(line: String) -> ChecksumEntry {
+    let open_paren: Int = 0;
+    let n: Int = chars_len(line);
+    let mut i: Int = 0;
+    let mut p_open: Int = -1;
+    let mut p_close: Int = -1;
+    let mut eq_pos: Int = -1;
+
+    while i < n {
+        let ch: Int = byte_at(line, i);
+        if ch == 40 && p_open < 0 { p_open = i; }
+        if ch == 41 && p_close < 0 { p_close = i; }
+        if ch == 61 && eq_pos < 0 { eq_pos = i; }
+        i = i + 1;
+    }
+
+    if p_open > 0 && p_close > p_open && eq_pos > p_close {
+        let algo: String = str_trim(str_slice(line, 0, p_open));
+        let path: String = strip_escaped_newlines(str_slice(line, p_open + 1, p_close));
+        let hash: String = to_lower_ascii(strip_escaped_newlines(str_slice(line, eq_pos + 1, n)));
+        return make_checksum_entry(path, hash, "", algo, "bsd", true, "PENDING");
+    }
+
+    return make_checksum_entry("", "", "", "UNKNOWN", "bsd", false, "FORMAT_ERROR");
+}
+
+pub fn parse_gnu_line(line: String) -> ChecksumEntry {
+    let n: Int = chars_len(line);
+    let mut sep_pos: Int = -1;
+    let mut i: Int = 0;
+
+    while i < n - 1 {
+        let ch1: Int = byte_at(line, i);
+        let ch2: Int = byte_at(line, i + 1);
+        if ch1 == 32 && (ch2 == 32 || ch2 == 42) {
+            sep_pos = i;
+            break;
+        }
+        i = i + 1;
+    }
+
+    if sep_pos > 0 {
+        let hash: String = to_lower_ascii(str_trim(str_slice(line, 0, sep_pos)));
+        let is_bin: Bool = (byte_at(line, sep_pos + 1) == 42);
+        let path: String = strip_escaped_newlines(str_slice(line, sep_pos + 2, n));
+        let algo: String = detect_algo_by_len(chars_len(hash));
+        return make_checksum_entry(path, hash, "", algo, "gnu", is_bin, "PENDING");
+    }
+
+    return make_checksum_entry("", "", "", "UNKNOWN", "gnu", false, "FORMAT_ERROR");
+}
+
+
+pub fn parse_manifest_line(raw_line: String) -> ChecksumEntry {
+    let line: String = str_trim(raw_line);
+    if chars_len(line) == 0 || str_starts_with(line, "#") {
+        return make_checksum_entry("", "", "", "NONE", "none", false, "SKIP");
+    }
+
+    if str_contains(line, " = ") && str_contains(line, "(") && str_contains(line, ")") {
+        return parse_bsd_line(line);
+    }
+
+    return parse_gnu_line(line);
+}
+
+pub fn parse_manifest_text(text: String) -> List[ChecksumEntry] {
+    let mut entries: List[ChecksumEntry] = list_new();
+    let lines: List[String] = str_split(text, "\n");
+    let n: Int = list_len(lines);
+    let mut i: Int = 0;
+
+    while i < n {
+        let line: String = list_get(lines, i);
+        let entry: ChecksumEntry = parse_manifest_line(line);
+        if entry.status != "SKIP" {
+            entries = list_push(entries, entry);
+        }
+        i = i + 1;
+    }
+    return entries;
+}

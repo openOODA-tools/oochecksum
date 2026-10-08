@@ -2,51 +2,149 @@
 //
 // Logline: Unified integrity checking utility verifying BSD and GNU style checksum manifests.
 //
-// Setup: Demands explicit capability tokens and standard argument list.
+// Setup: Demands explicit capability tokens FsReadCap, ProcessCap, EnvCap.
 //
 // Beats:
 //   1. Parse command-line options and dispatch --help, --version, or --mcp.
-//   2. Execute capability-bounded oochecksum operations.
-//   3. Format and output structured results to standard output.
+//   2. Ingest checksum manifests and verify digests against on-disk files.
+//   3. Compute and output standalone checksums for file arguments.
+//   4. Deliver POSIX-compliant status formatting or JSON telemetry.
 
-fn render_help() -> String {
-    return "oochecksum 0.1.0 (openOODA sovereign data & streaming)\n"
-        + "usage: oochecksum [options] [ARGUMENTS]...\n\n"
+import "core/checksum_types.oo";
+import "core/checksum_parser.oo";
+import "core/checksum_calc.oo";
+import "core/checksum_verify.oo";
+import "core/checksum_demo.oo";
+import "render/checksum_theme.oo";
+import "ipc/checksum_opts.oo";
+import "ipc/mcp_serve.oo";
+
+pub fn render_help() -> String {
+    return "oochecksum 0.2.0 (openOODA sovereign checksum verifier)\n"
+        + "usage: oochecksum [options] [FILE]...\n\n"
         + "Unified integrity checking utility verifying BSD and GNU style checksum manifests.\n\n"
         + "Options:\n"
+        + "  -c, --check <FILE>   read checksums from manifest file and verify\n"
+        + "  -a, --algorithm <A>  algorithm override: sha256, sha512, md5, crc32 [default: auto]\n"
+        + "      --tag            create BSD-style checksum manifest\n"
+        + "      --status         don't output anything, status code shows success\n"
+        + "  -q, --quiet          don't print OK for each successfully verified file\n"
+        + "      --ignore-missing don't fail or report status for missing files\n"
+        + "      --strict         exit non-zero for improperly formatted checksum lines\n"
+        + "      --demo           verify sample embedded manifest\n"
+        + "      --json           output formatted as JSON Lines\n"
         + "  -h, --help           display this help and exit\n"
         + "  -v, --version        output version information and exit\n"
-        + "      --json           output formatted as JSON Lines\n"
-        + "      --color <WHEN>   colorize output: auto, always, never [default: auto]\n"
-        + "      --theme <NAME>   override active oote palette\n"
         + "      --mcp            run as Model Context Protocol stdio server\n";
 }
 
-fn render_version() -> String {
-    return "oochecksum 0.1.0 (openOODA sovereign data & streaming)\n";
+pub fn render_version() -> String {
+    return "oochecksum 0.2.0 (openOODA sovereign checksum verifier)\n";
 }
 
-fn main(args: List[String]) -> Int {
-    let num_args: Int = list_len(args);
-    let mut i: Int = 0;
+pub fn main(
+    fs: &FsReadCap,
+    _proc_cap: &ProcessCap,
+    _env: &EnvCap,
+    args: List[String]
+) -> Result[Int, String] {
+    let opts: ChecksumOptions = parse_checksum_opts(args);
 
-    while i < num_args {
-        let arg: String = list_get(args, i);
-        if arg == "-h" || arg == "--help" {
-            print(render_help());
-            return 0;
-        }
-        if arg == "-v" || arg == "--version" {
-            print(render_version());
-            return 0;
-        }
-        if arg == "--mcp" {
-            print("{\"jsonrpc\":\"2.0\",\"result\":{\"status\":\"ready\",\"tool\":\"oochecksum\"}}\n");
-            return 0;
-        }
-        i = i + 1;
+    if opts.help {
+        print(render_help());
+        return Ok(0);
+    }
+    if opts.version {
+        print(render_version());
+        return Ok(0);
+    }
+    if opts.mcp {
+        run_mcp_server(fs);
+        return Ok(0);
     }
 
-    print("oochecksum: sovereign capability-bounded utility ready\n");
-    return 0;
+    if opts.demo {
+        let demo_entries: List[ChecksumEntry] = build_demo_entries();
+        let sum: ChecksumSummary = summarize_verification(demo_entries);
+        if opts.json_output {
+            print(render_json_results(demo_entries, sum));
+            return Ok(0);
+        }
+        let n: Int = list_len(demo_entries);
+        let mut i: Int = 0;
+        while i < n {
+            let e: ChecksumEntry = list_get(demo_entries, i);
+            print(render_entry_status(e, opts.quiet));
+            i = i + 1;
+        }
+        return Ok(0);
+    }
+
+    if chars_len(opts.check_path) > 0 {
+        let manifest_res: Result[String, String] = read_file(fs, opts.check_path);
+        if !manifest_res.is_ok() {
+            print("oochecksum: " + opts.check_path + ": No such file or directory\n");
+            return Ok(1);
+        }
+
+        let manifest_text: String = match manifest_res { Ok(s) => s, Err(_) => "" };
+        let entries: List[ChecksumEntry] = parse_manifest_text(manifest_text);
+        let verified: List[ChecksumEntry] = verify_manifest_entries(fs, entries);
+        let sum: ChecksumSummary = summarize_verification(verified);
+
+        if opts.status_only {
+            if sum.failed_mismatch > 0 || (!opts.ignore_missing && sum.missing_files > 0) || (opts.strict && sum.format_errors > 0) {
+                return Ok(1);
+            }
+            return Ok(0);
+        }
+
+        if opts.json_output {
+            print(render_json_results(verified, sum));
+            if sum.failed_mismatch > 0 || (!opts.ignore_missing && sum.missing_files > 0) {
+                return Ok(1);
+            }
+            return Ok(0);
+        }
+
+        let n: Int = list_len(verified);
+        let mut i: Int = 0;
+        while i < n {
+            let e: ChecksumEntry = list_get(verified, i);
+            if !opts.ignore_missing || e.status != "MISSING" {
+                print(render_entry_status(e, opts.quiet));
+            }
+            i = i + 1;
+        }
+
+        print(render_summary_warnings(sum));
+
+        if sum.failed_mismatch > 0 || (!opts.ignore_missing && sum.missing_files > 0) || (opts.strict && sum.format_errors > 0) {
+            return Ok(1);
+        }
+        return Ok(0);
+    }
+
+    let num_files: Int = list_len(opts.files);
+    if num_files > 0 {
+        let mut i: Int = 0;
+        let algo: String = if opts.algorithm != "auto" { opts.algorithm } else { "SHA256" };
+        while i < num_files {
+            let fpath: String = list_get(opts.files, i);
+            let file_res: Result[String, String] = read_file(fs, fpath);
+            if file_res.is_ok() {
+                let content: String = match file_res { Ok(s) => s, Err(_) => "" };
+                let hash: String = compute_checksum(algo, content);
+                let entry: ChecksumEntry = make_checksum_entry(fpath, hash, hash, algo, if opts.tag_bsd { "bsd" } else { "gnu" }, false, "OK");
+                print(render_manifest_line(entry, opts.tag_bsd));
+            } else {
+                print("oochecksum: " + fpath + ": FAILED open or read\n");
+            }
+            i = i + 1;
+        }
+        return Ok(0);
+    }
+
+    print(render_help());
+    return Ok(0);
 }

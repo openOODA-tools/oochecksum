@@ -1,0 +1,73 @@
+// # Checksum Terminal Renderer and Manifest Formatter
+//
+// Logline: Formats checksum verification lines, warning summaries, and JSON telemetry.
+//
+// Setup: Bridges verification models with POSIX standard output conventions.
+//
+// Beats:
+//   1. Format individual file verification status lines (OK, FAILED, MISSING).
+//   2. Generate GNU-style and BSD-style manifest lines.
+//   3. Render summary warning notices for failed and missing files.
+//   4. Format structured JSON telemetry for automated agent ingestion.
+
+import "core/checksum_types.oo";
+
+pub fn render_entry_status(entry: ChecksumEntry, quiet: Bool) -> String {
+    if entry.status == "OK" {
+        if quiet { return ""; }
+        return entry.path + ": OK\n";
+    }
+    if entry.status == "FAILED" {
+        return entry.path + ": FAILED\n";
+    }
+    if entry.status == "MISSING" {
+        return entry.path + ": FAILED open or read\n";
+    }
+    if entry.status == "FORMAT_ERROR" {
+        return "oochecksum: " + entry.path + ": improperly formatted checksum line\n";
+    }
+    return "";
+}
+
+pub fn render_manifest_line(entry: ChecksumEntry, bsd_tag: Bool) -> String {
+    if bsd_tag || entry.format_style == "bsd" {
+        let algo: String = if chars_len(entry.algorithm) > 0 { entry.algorithm } else { "SHA256" };
+        return algo + " (" + entry.path + ") = " + entry.expected_hash + "\n";
+    }
+    let sep: String = if entry.is_binary { " *" } else { "  " };
+    return entry.expected_hash + sep + entry.path + "\n";
+}
+
+pub fn render_summary_warnings(sum: ChecksumSummary) -> String {
+    let mut out: String = "";
+    if sum.failed_mismatch > 0 {
+        out = out + "oochecksum: WARNING: " + to_string(sum.failed_mismatch) + " computed checksum did NOT match\n";
+    }
+    if sum.missing_files > 0 {
+        out = out + "oochecksum: WARNING: " + to_string(sum.missing_files) + " listed files could not be read\n";
+    }
+    if sum.format_errors > 0 {
+        out = out + "oochecksum: WARNING: " + to_string(sum.format_errors) + " line is improperly formatted\n";
+    }
+    return out;
+}
+
+pub fn render_json_results(entries: List[ChecksumEntry], sum: ChecksumSummary) -> String {
+    let mut out: String = "{\"status\":\"ok\",\"tool\":\"oochecksum\",\"total\":" + to_string(sum.total_lines);
+    out = out + ",\"passed\":" + to_string(sum.verified_ok);
+    out = out + ",\"failed\":" + to_string(sum.failed_mismatch);
+    out = out + ",\"missing\":" + to_string(sum.missing_files);
+    out = out + ",\"format_errors\":" + to_string(sum.format_errors);
+    out = out + ",\"files\":[";
+
+    let n: Int = list_len(entries);
+    let mut i: Int = 0;
+    while i < n {
+        let e: ChecksumEntry = list_get(entries, i);
+        out = out + "{\"path\":\"" + e.path + "\",\"algorithm\":\"" + e.algorithm + "\",\"status\":\"" + e.status + "\"}";
+        if i < n - 1 { out = out + ","; }
+        i = i + 1;
+    }
+    out = out + "]}\n";
+    return out;
+}

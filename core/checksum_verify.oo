@@ -1,0 +1,80 @@
+// # Checksum Verification Engine
+//
+// Logline: Verifies parsed manifest entries against on-disk files using explicit FsReadCap.
+//
+// Setup: Demands FsReadCap to inspect files and compare cryptographic digests.
+//
+// Beats:
+//   1. Read target file contents from filesystem.
+//   2. Compute digest and compare against expected manifest hash.
+//   3. Classify entry status into OK, FAILED, MISSING, or FORMAT_ERROR.
+//   4. Aggregate overall verification counts into ChecksumSummary.
+
+import "core/checksum_types.oo";
+import "core/checksum_calc.oo";
+
+pub fn verify_single_entry(fs: &FsReadCap, entry: ChecksumEntry) -> ChecksumEntry {
+    if entry.status == "FORMAT_ERROR" {
+        return entry;
+    }
+
+    let file_res: Result[String, String] = read_file(fs, entry.path);
+    if !file_res.is_ok() {
+        let mut missing_entry: ChecksumEntry = entry;
+        missing_entry.status = "MISSING";
+        return missing_entry;
+    }
+
+    let content: String = match file_res { Ok(s) => s, Err(_) => "" };
+    let actual: String = compute_checksum(entry.algorithm, content);
+
+    let mut res_entry: ChecksumEntry = entry;
+    res_entry.actual_hash = actual;
+
+    if to_lower_ascii(str_trim(res_entry.expected_hash)) == to_lower_ascii(actual) {
+        res_entry.status = "OK";
+    } else {
+        res_entry.status = "FAILED";
+    }
+
+    return res_entry;
+}
+
+pub fn verify_manifest_entries(fs: &FsReadCap, entries: List[ChecksumEntry]) -> List[ChecksumEntry] {
+    let mut verified: List[ChecksumEntry] = list_new();
+    let n: Int = list_len(entries);
+    let mut i: Int = 0;
+
+    while i < n {
+        let entry: ChecksumEntry = list_get(entries, i);
+        let checked: ChecksumEntry = verify_single_entry(fs, entry);
+        verified = list_push(verified, checked);
+        i = i + 1;
+    }
+    return verified;
+}
+
+pub fn summarize_verification(entries: List[ChecksumEntry]) -> ChecksumSummary {
+    let mut ok_cnt: Int = 0;
+    let mut fail_cnt: Int = 0;
+    let mut miss_cnt: Int = 0;
+    let mut err_cnt: Int = 0;
+
+    let n: Int = list_len(entries);
+    let mut i: Int = 0;
+    while i < n {
+        let entry: ChecksumEntry = list_get(entries, i);
+        if entry.status == "OK" {
+            ok_cnt = ok_cnt + 1;
+        } else if entry.status == "FAILED" {
+            fail_cnt = fail_cnt + 1;
+        } else if entry.status == "MISSING" {
+            miss_cnt = miss_cnt + 1;
+        } else if entry.status == "FORMAT_ERROR" {
+            err_cnt = err_cnt + 1;
+        }
+        i = i + 1;
+    }
+
+    return make_checksum_summary(n, ok_cnt, fail_cnt, miss_cnt, err_cnt);
+}

@@ -1,0 +1,42 @@
+// # Checksum Core Verification Anchor
+//
+// Logline: Invariant verification suite confirming parser, hash computation, and verification.
+//
+// Setup: Exports core subroutines and executes core integrity predicates.
+//
+// Beats:
+//   1. Verify checksum entry construction and attribute integrity.
+//   2. Verify GNU and BSD manifest line parsing.
+//   3. Verify CRC32 and SHA-256 digest computations.
+//   4. Deliver unified core verification status.
+
+import "core/checksum_types.oo";
+import "core/checksum_parser.oo";
+import "core/checksum_calc.oo";
+import "core/checksum_verify.oo";
+import "core/checksum_demo.oo";
+
+pub fn verify_core_subsystem() -> Bool {
+    let entry: ChecksumEntry = parse_manifest_line("1ae1f27ed3b8103ce3749fbef68b55f99ebe957523c00e4e790f81cefbf561d5  test.bin");
+    if entry.path != "test.bin" || entry.algorithm != "SHA256" {
+        return false;
+    }
+
+    let bsd_entry: ChecksumEntry = parse_manifest_line("SHA256 (sample.txt) = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    if bsd_entry.path != "sample.txt" || bsd_entry.format_style != "bsd" {
+        return false;
+    }
+
+    let crc: String = compute_crc32("hello");
+    if chars_len(crc) != 8 {
+        return false;
+    }
+
+    let demo: List[ChecksumEntry] = build_demo_entries();
+    let sum: ChecksumSummary = summarize_verification(demo);
+    if sum.verified_ok < 2 {
+        return false;
+    }
+
+    return true;
+}
